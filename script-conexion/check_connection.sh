@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Esperar 1 minuto al inicio
-sleep 60
+sleep 300
 
 # Función para obtener el gateway por defecto
 get_gateway() {

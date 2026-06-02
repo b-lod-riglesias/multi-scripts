@@ -13,7 +13,7 @@ echo "Dando permisos de ejecución..."
 chmod +x "$SCRIPT_PATH"
 
 echo "Añadiendo al crontab para ejecutar al inicio..."
-(crontab -l 2>/dev/null; echo "@reboot sleep 60 && $SCRIPT_PATH &") | crontab -
+(crontab -l 2>/dev/null; echo "@reboot sleep 300 && $SCRIPT_PATH &") | crontab -
 
 echo "Verificando crontab..."
 crontab -l | grep check_connection
