@@ -110,7 +110,7 @@ install_nvidia_driver_if_needed() {
     return 0
   }
 
-  local pci_count smi_count driver_changed branch packages
+  local pci_count smi_count driver_changed
   pci_count="$(count_nvidia_pci_gpus)"
   smi_count="$(count_nvidia_smi_gpus)"
   driver_changed=0
@@ -122,42 +122,39 @@ install_nvidia_driver_if_needed() {
 
   log "NVIDIA GPUs found by PCI: $pci_count; visible to nvidia-smi: $smi_count"
 
-  if [ "$FORCE_NVIDIA_580" -eq 1 ] || has_legacy_pascal_gpu; then
-    branch="580"
-    packages="nvidia-driver-580 nvidia-dkms-580"
-  else
-    branch="current"
-    if apt-cache show cuda-drivers >/dev/null 2>&1; then
-      packages="cuda-drivers"
-    elif command -v ubuntu-drivers >/dev/null 2>&1; then
-      packages="__ubuntu_drivers__"
-    else
-      packages="nvidia-driver-580 nvidia-dkms-580"
-      branch="580 fallback"
-    fi
+  if [ "$smi_count" -ge "$pci_count" ] && [ "$FORCE_NVIDIA_580" -eq 0 ]; then
+    log "NVIDIA driver already sees all PCI GPUs"
+    return 0
   fi
 
-  if [ "$FORCE_NVIDIA_580" -eq 1 ] || [ "$smi_count" -lt "$pci_count" ]; then
-    log "Installing NVIDIA driver branch: $branch"
-    if [ "$packages" = "__ubuntu_drivers__" ]; then
-      apt-get update
-      if ubuntu-drivers install --gpgpu 2>/dev/null; then
-        log "Installed GPU-only driver via ubuntu-drivers --gpgpu"
-      else
-        local recommended
-        recommended="$(ubuntu-drivers list 2>/dev/null | grep -E '^nvidia-driver-[0-9]+' | head -n1 | awk '{print $1}')"
-        if [ -n "$recommended" ]; then
-          apt-get -y install --no-install-recommends "$recommended"
-        else
-          apt_install nvidia-driver-580 nvidia-dkms-580
-        fi
-      fi
-    elif [ -n "$packages" ]; then
-      apt_install $packages
+  log "Installing NVIDIA driver"
+
+  local detected_gpu recommended_driver
+  detected_gpu="$(lspci -nn 2>/dev/null | grep -Ei 'VGA|3D|Display' | grep -Ei 'NVIDIA|10de' | head -n1 | sed 's/.*: //')"
+  log "Detected GPU: ${detected_gpu:-unknown}"
+
+  if [ "$FORCE_NVIDIA_580" -eq 1 ] || has_legacy_pascal_gpu; then
+    log "Forcing driver branch: 580"
+    apt_install nvidia-driver-580 nvidia-dkms-580
+    driver_changed=1
+  elif command -v ubuntu-drivers >/dev/null 2>&1; then
+    apt-get update
+    recommended_driver="$(ubuntu-drivers devices 2>/dev/null | grep -E 'driver.*recommended' | grep -oE 'nvidia-driver-[0-9]+' | head -n1)"
+    if [ -n "$recommended_driver" ]; then
+      log "Recommended driver for this GPU: $recommended_driver"
+      apt-get -y install --no-install-recommends "$recommended_driver"
+    else
+      log "No recommended driver found, falling back to ubuntu-drivers autoinstall"
+      ubuntu-drivers install --gpgpu 2>/dev/null || apt_install nvidia-driver-580 nvidia-dkms-580
     fi
     driver_changed=1
+  elif apt-cache show cuda-drivers >/dev/null 2>&1; then
+    apt_install cuda-drivers
+    driver_changed=1
   else
-    log "NVIDIA driver already sees all PCI GPUs"
+    log "No ubuntu-drivers or cuda-drivers available, using 580 fallback"
+    apt_install nvidia-driver-580 nvidia-dkms-580
+    driver_changed=1
   fi
 
   if [ "$driver_changed" -eq 1 ]; then
