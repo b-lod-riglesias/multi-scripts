@@ -130,7 +130,7 @@ install_nvidia_driver_if_needed() {
     if apt-cache show cuda-drivers >/dev/null 2>&1; then
       packages="cuda-drivers"
     elif command -v ubuntu-drivers >/dev/null 2>&1; then
-      packages=""
+      packages="__ubuntu_drivers__"
     else
       packages="nvidia-driver-580 nvidia-dkms-580"
       branch="580 fallback"
@@ -139,11 +139,21 @@ install_nvidia_driver_if_needed() {
 
   if [ "$FORCE_NVIDIA_580" -eq 1 ] || [ "$smi_count" -lt "$pci_count" ]; then
     log "Installing NVIDIA driver branch: $branch"
-    if [ -n "$packages" ]; then
-      apt_install $packages
-    else
+    if [ "$packages" = "__ubuntu_drivers__" ]; then
       apt-get update
-      ubuntu-drivers install
+      if ubuntu-drivers install --gpgpu 2>/dev/null; then
+        log "Installed GPU-only driver via ubuntu-drivers --gpgpu"
+      else
+        local recommended
+        recommended="$(ubuntu-drivers list 2>/dev/null | grep -E '^nvidia-driver-[0-9]+' | head -n1 | awk '{print $1}')"
+        if [ -n "$recommended" ]; then
+          apt-get -y install --no-install-recommends "$recommended"
+        else
+          apt_install nvidia-driver-580 nvidia-dkms-580
+        fi
+      fi
+    elif [ -n "$packages" ]; then
+      apt_install $packages
     fi
     driver_changed=1
   else
